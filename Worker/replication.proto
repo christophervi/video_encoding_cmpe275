@@ -4,29 +4,32 @@ package replication;
 
 import "google/protobuf/timestamp.proto";
 
-// Service definition for replication
+// Service definition for replication (existing)
 service ReplicationService {
   rpc Write (WriteRequest) returns (WriteResponse);
   rpc Read (ReadRequest) returns (ReadResponse);
-
-  // Internal requests for NWR replication
   rpc InternalWrite (InternalWriteRequest) returns (InternalWriteResponse);
   rpc InternalRead (InternalReadRequest) returns (InternalReadResponse);
   rpc GetStatus (GetStatusRequest) returns (GetStatusResponse);
 }
 
-// Service definition for video processing workers
+// Service definition for video processing workers (existing)
 service VideoProcessingService {
-  // RPC for master to send a video chunk to a worker for processing
   rpc ProcessChunk (ProcessChunkRequest) returns (ProcessChunkResponse);
-  // RPC for client/master to retrieve a processed shard file from a worker
   rpc GetShard (GetShardRequest) returns (GetShardResponse);
-  // RPC for master to check health of worker nodes
   rpc CheckHealth (HealthCheckRequest) returns (HealthCheckResponse);
 }
 
-// --- Client Requests/Responses (Existing) ---
+// New service definition for Client to Master communication
+service ClientMasterService {
+  // RPC for client to upload a video to the master.
+  // Client streams video data (metadata first, then chunks).
+  // Master streams status updates back to the client.
+  rpc UploadVideo (stream UploadVideoRequest) returns (stream UploadVideoStatusResponse);
+}
 
+
+// --- Client Requests/Responses (Existing) ---
 message WriteRequest {
   string key = 1;
   string value = 2;
@@ -51,7 +54,6 @@ message ReadResponse {
 }
 
 // --- Internal Requests/Responses (Existing) ---
-
 message InternalWriteRequest {
   string key = 1;
   string value = 2;
@@ -81,9 +83,7 @@ message InternalReadResponse {
 }
 
 // --- Status (Existing) ---
-
-message GetStatusRequest {
-}
+message GetStatusRequest {}
 
 message GetStatusResponse {
   string server_id = 1;
@@ -97,45 +97,83 @@ message GetStatusResponse {
 }
 
 // --- Video Processing Messages (Existing) ---
-
 message ProcessChunkRequest {
   string video_id = 1;
   int32 chunk_index = 2;
   bytes chunk_data = 3;
+  string original_filename = 4; // Added to help worker save shards meaningfully
 }
 
 message ProcessChunkResponse {
   bool success = 1;
   string worker_id = 2;
-  string shard_location = 3; // Path or identifier where the shard was stored
+  string shard_location = 3; 
   int64 original_size = 4;
   int64 encoded_size = 5;
   string message = 6;
 }
 
-// --- Get Shard Messages (New) ---
-
 message GetShardRequest {
-  string shard_location = 1; // The path or identifier of the shard to retrieve
+  string shard_location = 1;
 }
 
 message GetShardResponse {
   bool success = 1;
-  bytes shard_data = 2; // The binary content of the shard file
-  string message = 3; // Status or error message
+  bytes shard_data = 2;
+  string message = 3;
 }
 
-// --- Health Check Messages (New) ---
-
 message HealthCheckRequest {
-  string master_id = 1; // Identifier of the master requesting the health check
+  string master_id = 1;
 }
 
 message HealthCheckResponse {
-  bool is_healthy = 1; // Whether the worker is healthy
-  string worker_id = 2; // Identifier of the worker responding
-  float cpu_utilization = 3; // Current CPU utilization (0-100)
-  int64 memory_usage_bytes = 4; // Current memory usage in bytes
-  int32 active_tasks = 5; // Number of tasks currently being processed
-  string message = 6; // Additional health information or error message
+  bool is_healthy = 1;
+  string worker_id = 2;
+  float cpu_utilization = 3;
+  int64 memory_usage_bytes = 4;
+  int32 active_tasks = 5;
+  string message = 6;
 }
+
+// --- New Messages for Client-Master Video Upload ---
+message VideoMetadata {
+  string filename = 1;
+  int64 filesize = 2; // Optional, but useful for progress
+  string content_type = 3; // e.g., "video/mp4"
+}
+
+message UploadVideoRequest {
+  oneof payload {
+    VideoMetadata metadata = 1;
+    bytes chunk_data = 2;
+  }
+}
+
+enum UploadStatusCode {
+  UPLOAD_STATUS_UNSPECIFIED = 0;
+  UPLOAD_STATUS_IN_PROGRESS = 1;     // Client is sending data to master
+  UPLOAD_STATUS_RECEIVED_BY_MASTER = 2; // Master has received all data
+  UPLOAD_STATUS_PROCESSING_BY_MASTER = 3; // Master is chunking/preparing for workers
+  UPLOAD_STATUS_DISTRIBUTING_TO_WORKERS = 4; // Master is sending chunks to workers
+  UPLOAD_STATUS_COMPLETED = 5;       // All chunks processed by workers (or master considers its job done)
+  UPLOAD_STATUS_FAILED = 6;          // Upload or processing failed
+}
+
+message BenchmarkMetrics {
+  double client_upload_duration_seconds = 1; // Time taken for client to send all data to master
+  double master_chunking_duration_seconds = 2; // Time master took to chunk the video
+  double master_distribution_duration_seconds = 3; // Time master took to distribute all chunks
+  // Potentially more metrics can be added here, e.g., per-worker processing times if aggregated by master
+}
+
+message UploadVideoStatusResponse {
+  string video_id = 1; // Unique ID for the uploaded video job, generated by master
+  UploadStatusCode status_code = 2;
+  string message = 3; // Human-readable status message or error details
+  float progress_percentage = 4; // Overall progress (0-100), interpretation depends on status_code
+  int64 bytes_received_by_master = 5;
+  int64 total_video_size = 6; // From metadata, if provided
+  BenchmarkMetrics metrics = 7; // Optional, sent when available (e.g., at completion)
+}
+

@@ -169,45 +169,41 @@ class VideoProcessingWorker(replication_pb2_grpc.VideoProcessingServiceServicer)
                 shard_data=b"",
                 message=f"Unexpected worker error: {e}"
             )
-
-    async def CheckHealth(self, request: replication_pb2.HealthCheckRequest, context: grpc.aio.ServicerContext) -> replication_pb2.HealthCheckResponse:
-        """Handles health check requests from the master."""
-        master_id = request.master_id
-        logging.info(f"[{self.worker_id}] Received health check from master '{master_id}'")
-        
-        try:
-            # Get system metrics using psutil
-            cpu_percent = psutil.cpu_percent(interval=0.1)
-            memory_usage = psutil.Process(os.getpid()).memory_info().rss  # Resident Set Size in bytes
             
-            # Get number of active tasks
-            active_tasks = 0
+    async def CheckHealth(self, request: replication_pb2.HealthCheckRequest, context: grpc.aio.ServicerContext) -> replication_pb2.HealthCheckResponse:
+        master_id = request.master_id
+        # Slightly reduce logging verbosity for frequent health checks if desired
+        # logging.info(f"[{self.worker_id}] Received health check from master '{master_id}'") 
+
+        try:
+            cpu_percent = psutil.cpu_percent(interval=0.1) # interval can be None for non-blocking if acceptable
+            memory_info = psutil.Process(os.getpid()).memory_info()
+            memory_usage_bytes = memory_info.rss  # Resident Set Size
+
+            current_active_tasks = 0
             async with self._active_tasks_lock:
-                active_tasks = self._active_tasks
-                
-            # Create health check response
+                current_active_tasks = self._active_tasks
+
             response = replication_pb2.HealthCheckResponse(
-                is_healthy=True,  # Default to healthy
-                worker_id=self.worker_id,
+                is_healthy=True,
+                worker_id=self.worker_id, # Populate worker_id
                 cpu_utilization=cpu_percent,
-                memory_usage_bytes=memory_usage,
-                active_tasks=active_tasks,
+                memory_usage_bytes=memory_usage_bytes,
+                active_tasks=current_active_tasks,
                 message="Worker is healthy and ready to process tasks"
             )
-            
-            # Log health status
-            logging.info(f"[{self.worker_id}] Health check completed: CPU: {cpu_percent}%, Memory: {memory_usage} bytes, Active tasks: {active_tasks}")
-            
+            # logging.debug(f"[{self.worker_id}] Health check response: {response}")
             return response
-            
+
         except Exception as e:
             logging.error(f"[{self.worker_id}] Error during health check: {e}", exc_info=True)
             return replication_pb2.HealthCheckResponse(
                 is_healthy=False,
-                worker_id=self.worker_id,
+                worker_id=self.worker_id, # Populate worker_id even on error
+                # Optionally provide stale or zeroed metrics on error
                 cpu_utilization=0.0,
                 memory_usage_bytes=0,
-                active_tasks=0,
+                active_tasks=0, 
                 message=f"Health check failed: {str(e)}"
             )
 

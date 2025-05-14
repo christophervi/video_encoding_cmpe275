@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package master_internal;
+
+// Service for internal communication between master components
+service InternalMasterService {
+    // RPC for the main master server to get a list of healthy workers from the health monitor
+    rpc GetHealthyWorkers(GetHealthyWorkersRequest) returns (GetHealthyWorkersResponse);
+}
+
+message WorkerLoadInfo {
+  string address = 1;
+  float cpu_utilization = 2;
+  int32 active_tasks = 3;
+  int64 memory_usage_bytes = 4;
+  string worker_id = 5;
+}
+
+// Request message for GetHealthyWorkers (can be empty if no parameters are needed)
+message GetHealthyWorkersRequest {}
+
+// Response message for GetHealthyWorkers
+message GetHealthyWorkersResponse {
+    repeated WorkerLoadInfo workers_with_load = 1;
+}
+

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # This script runs the unit tests for master.py
-# It assumes it is being run from the video_encoding_cmpe275-main/Master/ directory
+# It assumes it is being run from the video_encoding-main/Master/ directory
 
 # Activate virtual environment if it exists and is used by the project
 # If venv is in Worker directory as per previous setup:

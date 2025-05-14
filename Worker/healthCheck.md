@@ -203,14 +203,6 @@ Design for fault tolerance by:
 - Providing fallback mechanisms when workers fail
 - Considering redundant task assignments for critical workloads
 
-### 6. Metrics and Monitoring
-
-Extend the monitoring system to:
-- Record historical health data for trend analysis
-- Generate alerts on significant health status changes
-- Provide a dashboard or status endpoint for system health
-- Track worker latency and performance over time
-
 ## Testing Health Checks
 
 For testing the health check functionality:
@@ -234,9 +226,6 @@ For testing the health check functionality:
 ## Performance Considerations
 
 - Health checks should be lightweight and quick to avoid overloading workers
-- Use an adaptive interval based on cluster size (more workers = less frequent checks)
-- Consider implementing push-based health updates for large clusters
-- Buffer health status changes to avoid flapping (rapid healthy/unhealthy transitions)
 
 
 This health check system provides the foundation for building a reliable distributed video encoding system that can handle worker failures gracefully. 

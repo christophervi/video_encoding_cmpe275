@@ -1,76 +1,83 @@
-## Master Process (`master.py`)
+# Master Server (Dual Process)
 
-This directory contains the `master.py` script, which acts as the Master process responsible for orchestrating the distribution of video chunks to available Worker nodes.
+This folder contains the components for the Master functionality, which is now split into two separate processes for stability and clarity:
 
-### Key Features:
-- **Video Input**: Takes a path to a video file as input.
-- **Worker Registration**: Accepts a list of worker node addresses (host:port).
-- **Video Chunking**: Divides the input video into smaller, manageable chunks of a configurable size (default 1MB).
-- **Load-Aware Distribution**: Implements a load-aware strategy for distributing chunks. It periodically queries the health and load (active tasks, CPU utilization) of each worker using the `CheckHealth` RPC.
-- **Worker Selection**: Based on the load information, it selects the least busy worker (prioritizing fewer active tasks, then lower CPU) to send the next video chunk via the `ProcessChunk` RPC.
-- **Error Handling**: Includes basic error management for worker communication. If a worker is unresponsive, it is temporarily marked as unavailable, and the master will periodically attempt to re-check its status.
-- **Logging**: Provides detailed logs of its operations, including worker selection, chunk distribution, and any errors encountered.
-- **Sample Video**: A sample video (`sample_videos/file_example_MP4_1920_18MG.mp4`) is included for testing and demonstration.
+1.  **`master_health_monitor.py`**: This process is responsible for:
+    *   Periodically checking the health of all configured worker nodes (`worker.py`) using gRPC (`CheckHealth` RPC from `replication.proto`).
+    *   Maintaining an internal, up-to-date status map of healthy worker nodes.
+    *   Exposing an internal gRPC service (`InternalMasterService` defined in `internal_master.proto`) that the main Master Server can query to get a list of currently healthy workers.
 
-### Associated Scripts:
+2.  **`master_server_main.py`**: This process is the main client-facing gRPC server and is responsible for:
+    *   Implementing the `ClientMasterService` defined in `replication.proto`.
+    *   Handling video uploads from `client.py` via the `UploadVideo` RPC.
+        *   Receiving video metadata and data chunks.
+        *   Streaming status updates back to the client.
+    *   Querying the `master_health_monitor.py` process via its internal gRPC service to get a list of healthy workers when a video needs to be distributed.
+    *   Chunking the received video.
+    *   Distributing these chunks to healthy worker nodes (obtained from the health monitor) using the `ProcessChunk` RPC.
+    *   Managing temporary storage for uploaded videos in `/tmp/master_video_uploads/` and ensuring cleanup.
 
-- **`start_master.sh`**: A convenience script to start the `master.py` process. By default, it uses the included sample video (`./sample_videos/file_example_MP4_1920_18MG.mp4`) and attempts to connect to workers on `localhost:50061` and `localhost:50062`. You can modify this script or pass arguments to it if needed (though the current version has hardcoded values for simplicity).
+This separation was implemented to resolve segmentation faults caused by running gRPC server and client roles within the same asyncio event loop in the previous single-process `master.py`.
 
-- **`test_master.py`**: A Python script using the `unittest` framework to test the functionality of `master.py`. It automatically starts two worker instances, runs `master.py` with the sample video, and checks for successful completion and shard creation.
+## Setup
 
-- **`run_master_test.sh`**: A shell script to execute `test_master.py`. It handles activating the Python virtual environment (expected to be in the `../Worker/venv` directory) before running the tests.
+1.  Ensure one or more Worker nodes (`worker.py` in the `Worker` folder) are running and their addresses are known.
+2.  Make sure the Python virtual environment (now expected at `../venv` relative to this Master directory, or `video_encoding-main/venv` from the project root) is set up with all necessary dependencies (`grpcio`, `grpcio-tools`, `protobuf`, `asyncio`). You can set this up by running `setup_env.sh` in the `Worker` folder (which creates the venv in the project root).
 
-### How to Run `master.py`
+## Usage
 
-#### 1. Using the Startup Script (Recommended for Sample Video):
+The `start_master.sh` script is the recommended way to launch both master components.
 
-   This is the easiest way to run the master with the provided sample video.
+### Using the Startup Script (`start_master.sh`)
 
-   1.  Ensure you have at least two instances of `worker.py` (from the `../Worker` directory) running and accessible on `localhost:50061` and `localhost:50062`. You can use the `../Worker/start_worker.sh` script for this (run it twice with different port arguments if needed, or modify it to launch multiple workers).
-   2.  Make sure you are in the `video_encoding_cmpe275-main/Master` directory.
-   3.  Activate the Python virtual environment (located in the `../Worker` directory):
-       ```bash
-       source ../Worker/venv/bin/activate
-       ```
-   4.  Execute the startup script:
-       ```bash
-       ./start_master.sh
-       ```
-       This will run `master.py` with `./sample_videos/file_example_MP4_1920_18MG.mp4` and workers `localhost:50061,localhost:50062`.
+1.  Navigate to the project root (`video_encoding-main/`).
+2.  Activate the Python virtual environment: `source ./venv/bin/activate`
+3.  From the `Master` directory, make the script executable (if not already) and run it:
+    ```bash
+    # If in project root:
+    # cd Master/
+    # chmod +x start_master.sh
+    # ./start_master.sh
+    # cd ..
 
-#### 2. Running the Automated Tests:
+    # Or directly from Master directory (after activating venv from root):
+    chmod +x start_master.sh
+    ./start_master.sh
+    ```
+4.  The script will first prompt you to enter the comma-separated worker addresses for the **Health Monitor** (e.g., `localhost:50061,localhost:50062`).
+5.  It will then start the `master_health_monitor.py` in the background on its default port (50071).
+6.  After a brief pause, it will start `master_server_main.py` (the client-facing server) on its default port (50050). This server will be configured to connect to the health monitor.
+7.  When you stop the main server (e.g., with Ctrl+C), the script will attempt to also stop the health monitor process.
 
-   The test script will automatically handle starting worker processes for the duration of the test.
+### Running Components Manually (for debugging)
 
-   1.  Make sure you are in the `video_encoding_cmpe275-main/Master` directory.
-   2.  Execute the test runner script:
-       ```bash
-       ./run_master_test.sh
-       ```
-       This will activate the virtual environment, run `test_master.py`, which starts its own worker instances, tests `master.py` with the sample video, and then shuts down the workers it started.
+You can also run the components separately:
 
-#### 3. Manual Execution of `master.py`:
+1.  **Start the Health Monitor**:
+    Navigate to the project root, activate venv, then:
+    ```bash
+    python Master/master_health_monitor.py --port <health_monitor_port> --workers <worker1_address:port,...>
+    ```
+    Example: `python Master/master_health_monitor.py --port 50071 --workers localhost:50061,localhost:50062`
 
-   1.  Ensure you have one or more instances of `worker.py` (from the `../Worker` directory) running and accessible.
-   2.  Make sure you are in the `video_encoding_cmpe275-main/Master` directory.
-   3.  Activate the Python virtual environment (located in the `../Worker` directory):
-       ```bash
-       source ../Worker/venv/bin/activate
-       ```
-   4.  Execute `master.py` with the necessary command-line arguments:
+2.  **Start the Main Master Server** (in a new terminal):
+    Navigate to the project root, activate venv, then:
+    ```bash
+    python Master/master_server_main.py --port <main_server_port> --health_monitor_target <health_monitor_address:port>
+    ```
+    Example: `python Master/master_server_main.py --port 50050 --health_monitor_target localhost:50071`
 
-       ```bash
-       python master.py --video_path <path_to_video> --workers <worker1_address>,<worker2_address>,... [--chunk_size <size_in_bytes>]
-       ```
-       **Example with the included sample video:**
-       ```bash
-       python master.py --video_path ./sample_videos/file_example_MP4_1920_18MG.mp4 --workers localhost:50061,localhost:50062
-       ```
+## Dependencies
 
-       **Arguments:**
-       -   `--video_path`: (Required) Path to the video file you want to process.
-       -   `--workers`: (Required) A comma-separated list of worker addresses (e.g., `localhost:50061,localhost:50062`).
-       -   `--chunk_size` (Optional): The size of each video chunk in bytes. Defaults to 1MB (1048576 bytes).
+- `grpcio`
+- `protobuf`
+- `asyncio`
+- Generated gRPC Python files:
+    - `replication_pb2.py`, `replication_pb2_grpc.py` (from `Worker` folder, for client/worker communication)
+    - `internal_master_pb2.py`, `internal_master_pb2_grpc.py` (in `Master` folder, for internal master communication)
 
-The `master.py` script will then proceed to chunk the video and distribute these chunks to the specified workers based on their current load. The processed video shards will be stored in the `video_shards` directory on each respective worker machine (relative to where that `worker.py` instance is running).
+## Proto Files
+
+-   `replication.proto`: (Located in `Worker` folder) Defines services and messages for client-master and master-worker communication.
+-   `internal_master.proto`: (Located in `Master` folder) Defines the internal gRPC service used by `master_server_main.py` to query `master_health_monitor.py`.
 

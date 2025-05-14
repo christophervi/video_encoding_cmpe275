@@ -7,8 +7,8 @@ import shutil
 class TestMaster(unittest.TestCase):
     worker1_process = None
     worker2_process = None
-    # Assuming test_master.py is in video_encoding_cmpe275-main/Master/
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..')) # video_encoding_cmpe275-main
+    # Assuming test_master.py is in video_encoding-main/Master/
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..')) # video_encoding-main
     worker_dir = os.path.join(base_dir, 'Worker')
     master_dir = os.path.join(base_dir, 'Master')
     sample_video_name = "file_example_MP4_1920_18MG.mp4"
