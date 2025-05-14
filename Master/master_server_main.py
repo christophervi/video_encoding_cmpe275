@@ -9,7 +9,6 @@ import argparse
 import logging
 import time
 import uuid
-import random # For simple worker selection
 import inspect # For inspect.signature
 
 # Add Worker directory to sys.path to find generated gRPC files for replication.proto

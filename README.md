@@ -25,13 +25,13 @@ video_encoding-main/
 │   ├── replication_pb2.py        # Generated gRPC Python code
 │   ├── replication_pb2_grpc.py   # Generated gRPC Python code
 │   ├── replication_pb2.pyi       # Generated gRPC Python code
-│   ├── setup_env.sh              # Script to set up Python venv and install deps
 │   ├── start_worker.sh
 │   ├── test_worker_client.py     # Test client for individual worker
 │   ├── test_health_check.py      # Test script for worker health checks
 │   └── README.md
 ├── sample_videos/                # Sample video files for testing
 │   └── file_example_MP4_1920_18MG.mp4
+├── setup_env.sh                  # Script to set up Python venv and install deps
 ├── venv/                         # Python virtual environment for the project
 └── README.md                     # This file: Project overview and general instructions
 ```
